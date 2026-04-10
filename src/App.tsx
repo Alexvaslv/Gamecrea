@@ -4,7 +4,7 @@
  */
 
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, Component, ErrorInfo, ReactNode } from "react";
 import { 
   User, Swords, Users, Trophy, ShoppingBag, Gavel, Shield, ChevronLeft, ChevronRight, 
   CheckCircle2, ScrollText, Backpack, Mail, Settings, ArrowLeft, PawPrint, Wind, 
@@ -91,8 +91,59 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     path
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  toast.error("Ошибка базы данных: " + (error instanceof Error ? error.message : String(error)));
+  
+  // Check for permission denied
+  if (errInfo.error.toLowerCase().includes("permission") || errInfo.error.toLowerCase().includes("insufficient")) {
+    toast.error("Доступ запрещен. У вас недостаточно прав для этой операции.");
+  } else {
+    toast.error("Ошибка базы данных: " + (error instanceof Error ? error.message : String(error)));
+  }
+  
   throw new Error(JSON.stringify(errInfo));
+}
+
+export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-white/10 p-8 max-w-md w-full text-center space-y-4 rounded-2xl shadow-2xl">
+            <ShieldAlert className="w-16 h-16 text-red-500 mx-auto" />
+            <h1 className="text-2xl font-bold text-white">Упс! Что-то пошло не так</h1>
+            <p className="text-zinc-400 text-sm">
+              Произошла непредвиденная ошибка. Пожалуйста, попробуйте обновить страницу.
+            </p>
+            {this.state.error && (
+              <pre className="mt-4 p-4 bg-black/50 rounded text-left text-xs text-red-400 overflow-auto max-h-40 font-mono">
+                {this.state.error.message}
+              </pre>
+            )}
+            <Button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-zinc-100 text-zinc-950 hover:bg-white font-bold uppercase tracking-widest"
+            >
+              Обновить страницу
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 const USERS_COLLECTION = "users";
@@ -475,7 +526,7 @@ const AdminPanel = ({ currentUser, onUpdateUser }: { currentUser: any, onUpdateU
       setUsers(usersData);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching users:", error);
+      handleFirestoreError(error, OperationType.LIST, USERS_COLLECTION);
       setLoading(false);
     });
 

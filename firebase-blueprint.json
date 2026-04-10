@@ -176,6 +176,44 @@
       },
       "required": ["spouse1Id", "spouse2Id", "weddingDate"]
     },
+    "Item": {
+      "title": "Item",
+      "description": "A game item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "integer" },
+        "rarity": { "type": "string", "enum": ["common", "uncommon", "rare", "epic", "legendary"] },
+        "type": { "type": "string" },
+        "bonusPercent": { "type": "number" },
+        "iconUrl": { "type": "string" },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "strength": { "type": "integer" },
+            "agility": { "type": "integer" },
+            "intuition": { "type": "integer" },
+            "endurance": { "type": "integer" },
+            "wisdom": { "type": "integer" }
+          }
+        }
+      },
+      "required": ["id", "name", "rarity", "type"]
+    },
+    "Battle": {
+      "title": "Battle",
+      "description": "A battle session between players",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "players": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["active", "finished"] },
+        "startTime": { "type": "integer" },
+        "log": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "players", "status", "startTime"]
+    },
     "ClanBuilding": {
       "title": "ClanBuilding",
       "description": "A building within a clan",
