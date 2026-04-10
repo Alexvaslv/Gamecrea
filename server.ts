@@ -1,0 +1,138 @@
+import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function startServer() {
+  const app = express();
+  const httpServer = createServer(app);
+  const io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+
+  const PORT = 3000;
+
+  const onlineUsers = new Map<string, string>(); // socket.id -> userId
+  const userSockets = new Map<string, Set<string>>(); // userId -> Set of socket.ids
+  const userLocations = new Map<string, string>(); // userId -> location name
+  const userProfiles = new Map<string, { playerName: string, avatarUrl?: string, level: number }>(); // userId -> profile data
+
+  // Socket.io logic
+  io.on("connection", (socket) => {
+    console.log("A user connected:", socket.id);
+
+    socket.on("user_login", (data) => {
+      const { userId, playerName, avatarUrl, level } = typeof data === 'string' ? { userId: data, playerName: 'Unknown', level: 1 } : data;
+      if (!userId) return;
+      
+      onlineUsers.set(socket.id, userId);
+      if (!userSockets.has(userId)) {
+        userSockets.set(userId, new Set());
+      }
+      userSockets.get(userId)!.add(socket.id);
+      
+      if (playerName) {
+        userProfiles.set(userId, { playerName, avatarUrl, level });
+      }
+      
+      // Broadcast that this user is online with their profile
+      io.emit("user_status", { 
+        userId, 
+        status: "online", 
+        profile: userProfiles.get(userId) 
+      });
+      
+      // Send current online users and locations to the new user
+      const locations: Record<string, string> = {};
+      userLocations.forEach((loc, id) => {
+        locations[id] = loc;
+      });
+      
+      const profiles: Record<string, any> = {};
+      userProfiles.forEach((prof, id) => {
+        if (userSockets.has(id)) {
+          profiles[id] = prof;
+        }
+      });
+
+      socket.emit("all_online_data", { locations, profiles });
+    });
+
+    socket.on("user_location", (location) => {
+      const userId = onlineUsers.get(socket.id);
+      if (userId) {
+        userLocations.set(userId, location);
+        io.emit("user_location", { userId, location });
+      }
+    });
+
+    socket.on("get_online_users", (callback) => {
+      if (typeof callback === "function") {
+        const onlineData = Array.from(userSockets.keys()).map(id => ({
+          userId: id,
+          profile: userProfiles.get(id),
+          location: userLocations.get(id)
+        }));
+        callback(onlineData);
+      }
+    });
+
+    socket.on("global_message", (data) => {
+      // Broadcast to all clients
+      io.emit("global_message", {
+        ...data,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on("player_action", (data) => {
+      // Broadcast player actions (e.g., leveling up)
+      socket.broadcast.emit("player_action", data);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", socket.id);
+      const userId = onlineUsers.get(socket.id);
+      if (userId) {
+        onlineUsers.delete(socket.id);
+        const sockets = userSockets.get(userId);
+        if (sockets) {
+          sockets.delete(socket.id);
+          if (sockets.size === 0) {
+            userSockets.delete(userId);
+            io.emit("user_status", { userId, status: "offline" });
+          }
+        }
+      }
+    });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const buildPath = path.join(process.cwd(), 'build');
+    app.use(express.static(buildPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(buildPath, 'index.html'));
+    });
+  }
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
